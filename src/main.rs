@@ -8,7 +8,8 @@ use regex::Regex;
 use teloxide::prelude::*;
 use teloxide::types::{
     ChatId, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
-    KeyboardMarkup, KeyboardRemove, ParseMode, ReplyMarkup,
+    KeyboardButtonRequestUsers, KeyboardMarkup, KeyboardRemove, ParseMode,
+    ReplyMarkup, RequestUsers,
 };
 use teloxide::utils::command::BotCommands;
 use tokio::sync::Mutex;
