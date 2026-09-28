@@ -177,8 +177,8 @@ async fn cb_get_self(bot: Bot, q: CallbackQuery) -> ResponseResult<()> {
     let contact_keyboard = KeyboardMarkup::new(vec![vec![
         KeyboardButton::new("📱 ارسال شماره من").request_contact(),
     ]])
-    .resize_keyboard(true)
-    .one_time_keyboard(true);
+    .resize_keyboard()
+    .one_time_keyboard();
 
     if let Some(msg) = q.message {
         bot.send_message(msg.chat().id, PHONE_REQUEST_TEXT)
@@ -357,4 +357,4 @@ async fn main() -> anyhow::Result<()> {
         .await;
 
     Ok(())
-}
+                    }
