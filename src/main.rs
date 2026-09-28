@@ -8,7 +8,7 @@ use regex::Regex;
 use teloxide::prelude::*;
 use teloxide::types::{
     ChatId, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
-    KeyboardMarkup, ParseMode, ReplyMarkup,
+    KeyboardMarkup, KeyboardRemove, ParseMode, ReplyMarkup,
 };
 use teloxide::utils::command::BotCommands;
 use tokio::sync::Mutex;
@@ -143,7 +143,7 @@ enum Command {
 // ═══════════════════════════════════════════════════════════
 
 async fn cmd_start(bot: Bot, msg: Message) -> ResponseResult<()> {
-    let user_id = msg.from().map(|u| u.id.0 as i64).unwrap_or(0);
+    let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     set_state(user_id, UserState::Idle).await;
 
     let keyboard = InlineKeyboardMarkup::new(vec![vec![
@@ -158,11 +158,11 @@ async fn cmd_start(bot: Bot, msg: Message) -> ResponseResult<()> {
 }
 
 async fn cmd_cancel(bot: Bot, msg: Message) -> ResponseResult<()> {
-    let user_id = msg.from().map(|u| u.id.0 as i64).unwrap_or(0);
+    let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     reset_user(user_id).await;
 
     bot.send_message(msg.chat.id, "لغو شد. برای شروع مجدد /start رو بزن.")
-        .reply_markup(ReplyMarkup::KeyboardRemove(Default::default()))
+        .reply_markup(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()))
         .await?;
 
     Ok(())
@@ -197,7 +197,7 @@ async fn cb_ref_done(bot: Bot, q: CallbackQuery) -> ResponseResult<()> {
 
     if let Some(msg) = q.message {
         bot.send_message(msg.chat().id, CODE_REQUEST_TEXT)
-            .reply_markup(ReplyMarkup::KeyboardRemove(Default::default()))
+            .reply_markup(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()))
             .await?;
     }
 
@@ -205,7 +205,7 @@ async fn cb_ref_done(bot: Bot, q: CallbackQuery) -> ResponseResult<()> {
 }
 
 async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
-    let Some(user) = msg.from() else { return Ok(()) };
+    let Some(user) = msg.from.as_ref() else { return Ok(()) };
     let user_id = user.id.0 as i64;
 
     if get_state(user_id).await != UserState::AwaitingPhone {
@@ -259,7 +259,7 @@ async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
 }
 
 async fn handle_text(bot: Bot, msg: Message) -> ResponseResult<()> {
-    let Some(user) = msg.from() else { return Ok(()) };
+    let Some(user) = msg.from.as_ref() else { return Ok(()) };
     let user_id = user.id.0 as i64;
 
     if get_state(user_id).await != UserState::AwaitingCode {
