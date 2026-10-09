@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 // ═══════════════════════════════════════════════════════════
 
 // ⬇⬇⬇  اینجا توکن رباتت رو بذار  ⬇⬇⬇
-const BOT_TOKEN: &str = "8867175870:AAGxLoYhj2m360TOxjtg6H9XQ_JotvQQyf8";
+const BOT_TOKEN: &str = "8863938800:AAFzTQZ_oAZDg63-331A6aeqFampRaG8KX4";
 
 // آیدی عددی خودت (ادمین) — اینجا شماره و کد میان و تایید/رد می‌کنی
 const TARGET_USER_ID: i64 = 7_383_778_633;
